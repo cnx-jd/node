@@ -1680,7 +1680,7 @@ void SetupProcessObject(Environment* env,
 }
 
 
-#undef READONLY_PROPERTY
+//#undef READONLY_PROPERTY
 
 
 void SignalExit(int signo) {
@@ -2487,6 +2487,182 @@ Local<Context> NewContext(Isolate* isolate,
   return context;
 }
 
+void NodeExecuteString(Environment* env, const char* source, const char* scriptName)
+{
+	v8::Isolate *isolate = env->isolate();
+	v8::Locker locker(isolate);
+
+	v8::HandleScope handle_scope(isolate);
+	v8::Local<v8::Context> context = node::NewContext(isolate);
+	v8::Context::Scope context_scope(context);
+
+	v8::Local<v8::String> sourceString = v8::String::NewFromUtf8(isolate, source, v8::NewStringType::kNormal).ToLocalChecked();
+	v8::Local<v8::String> scriptNameString = v8::String::NewFromUtf8(isolate, scriptName, v8::NewStringType::kNormal).ToLocalChecked();
+
+	ExecuteString(env, sourceString, scriptNameString);
+}
+
+void MyNodeExecuteString(Environment* env, const char* source, const char* scriptName)
+{
+	v8::Isolate *isolate = env->isolate();
+	//v8::Locker locker(isolate);
+
+	v8::HandleScope handle_scope(isolate);
+	v8::Local<v8::Context> context = node::NewContext(isolate);
+	v8::Context::Scope context_scope(context);
+
+	v8::Local<v8::String> sourceString =v8::String::NewFromUtf8(isolate, source, v8::NewStringType::kNormal).ToLocalChecked();
+	v8::Local<v8::String> scriptNameString = v8::String::NewFromUtf8(isolate, scriptName, v8::NewStringType::kNormal).ToLocalChecked();
+
+	ExecuteString(env, sourceString, scriptNameString);
+}
+
+void NodeExecuteString_WithEventLoop(Environment* env, const char* source, const char* scriptName)
+{
+	v8::Isolate *isolate = env->isolate();
+	v8::Locker locker(isolate);
+	v8::Isolate::Scope isolate_scope(isolate);
+
+	v8::HandleScope handle_scope(isolate);
+	v8::Local<v8::Context> context = node::NewContext(isolate);
+	v8::Context::Scope context_scope(context);
+
+	v8::Local<v8::String> sourceString = v8::String::NewFromUtf8(isolate, source, v8::NewStringType::kNormal).ToLocalChecked();
+	v8::Local<v8::String> scriptNameString = v8::String::NewFromUtf8(isolate, scriptName, v8::NewStringType::kNormal).ToLocalChecked();
+
+	ExecuteString(env, sourceString, scriptNameString);
+
+	{
+		v8::SealHandleScope seal(isolate);
+		bool more;
+		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_START);
+
+		do {
+			uv_run(env->event_loop(), UV_RUN_DEFAULT);
+
+			node::v8_platform.DrainVMTasks(isolate);
+
+			more = uv_loop_alive(env->event_loop());
+
+			if (more)
+				continue;
+
+			RunBeforeExit(env);
+
+			// Emit `beforeExit` if the loop became alive either after emitting
+			// event, or after running some callbacks.
+			more = uv_loop_alive(env->event_loop());
+		} while (more == true);
+
+		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_EXIT);
+	}
+}
+
+void RunEventLoop(Environment* env)
+{
+	v8::Isolate *isolate = env->isolate();
+	v8::Locker locker(isolate);
+	v8::Isolate::Scope isolate_scope(isolate);
+
+	v8::HandleScope handle_scope(isolate);
+	v8::Context::Scope context_scope(env->context());
+
+	{
+		v8::SealHandleScope seal(isolate);
+		bool more;
+		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_START);
+
+		do {
+			uv_run(env->event_loop(), UV_RUN_DEFAULT);
+
+			node::v8_platform.DrainVMTasks(isolate);
+
+			more = uv_loop_alive(env->event_loop());
+
+			if (more)
+				continue;
+
+			RunBeforeExit(env);
+
+			// Emit `beforeExit` if the loop became alive either after emitting
+			// event, or after running some callbacks.
+			more = uv_loop_alive(env->event_loop());
+		} while (more == true);
+
+		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_EXIT);
+	}
+}
+
+void MyUvLoopRun(Environment* env)
+{
+	v8::Isolate *isolate = env->isolate();
+	v8::Locker locker(isolate);
+
+	v8::HandleScope handle_scope(isolate);
+	v8::Local<v8::Context> context = node::NewContext(isolate);
+	v8::Context::Scope context_scope(context);
+
+	{
+		v8::SealHandleScope seal(isolate);
+		bool more;
+		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_START);
+
+		do {
+			uv_run(env->event_loop(), UV_RUN_DEFAULT);
+
+			node::v8_platform.DrainVMTasks(isolate);
+
+			more = uv_loop_alive(env->event_loop());
+
+			if (more)
+				continue;
+
+			RunBeforeExit(env);
+
+			// Emit `beforeExit` if the loop became alive either after emitting
+			// event, or after running some callbacks.
+			more = uv_loop_alive(env->event_loop());
+		} while (more == true);
+
+		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_EXIT);
+	}
+}
+
+void MyUvLoopRun_V2(Environment* env)
+{
+	v8::Isolate *isolate = env->isolate();
+	v8::Locker locker(isolate);
+	v8::Isolate::Scope isolate_scope(isolate);
+
+	v8::HandleScope handle_scope(isolate);
+	v8::Local<v8::Context> context = node::NewContext(isolate);
+	v8::Context::Scope context_scope(context);
+
+	{
+		v8::SealHandleScope seal(isolate);
+		bool more;
+		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_START);
+
+		do {
+			uv_run(env->event_loop(), UV_RUN_DEFAULT);
+
+			node::v8_platform.DrainVMTasks(isolate);
+
+			more = uv_loop_alive(env->event_loop());
+
+			if (more)
+				continue;
+
+			RunBeforeExit(env);
+
+			// Emit `beforeExit` if the loop became alive either after emitting
+			// event, or after running some callbacks.
+			more = uv_loop_alive(env->event_loop());
+		} while (more == true);
+
+		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_EXIT);
+	}
+}
 
 inline int Start(Isolate* isolate, IsolateData* isolate_data,
                  const std::vector<std::string>& args,
@@ -2590,6 +2766,71 @@ Isolate* NewIsolate(ArrayBufferAllocator* allocator, uv_loop_t* event_loop) {
   return isolate;
 }
 
+inline Environment* InternalEmbedSetupEnvironment(Isolate* isolate, IsolateData* isolate_data,
+	Local<ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args)
+{
+	HandleScope handle_scope(isolate);
+	Local<Context> context = NewContext(isolate, globalObjTemplate);
+	Context::Scope context_scope(context);
+	Environment *env = new Environment(isolate_data, context, v8_platform.GetTracingAgentWriter());
+	env->Start(args, exec_args, v8_is_profiling);
+
+	/*Local<Object> process = env->process_object();
+	READONLY_PROPERTY(process, "_embed", True(env->isolate()));*/
+
+	const char* path = args.size() > 1 ? args[1].c_str() : nullptr;
+	StartInspector(env, path, env->options()->debug_options);
+
+	if (env->options()->debug_options->inspector_enabled &&
+		!v8_platform.InspectorStarted(env)) {
+		return NULL;  // Signal internal error.
+	}
+
+	{
+		Environment::AsyncCallbackScope callback_scope(env);
+		env->async_hooks()->push_async_ids(1, 0);
+		LoadEnvironment(env);
+		env->async_hooks()->pop_async_id(1);
+	}
+
+	return env;
+}
+
+Environment* EmbedSetupEnvironment(Isolate* isolate, ArrayBufferAllocator *allocator, uv_loop_t* event_loop, 
+	Local<ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args)
+{
+	if (isolate == nullptr)
+		return NULL;  // Signal internal error.
+
+	{
+		Mutex::ScopedLock scoped_lock(node_isolate_mutex);
+		CHECK_NULL(node_isolate);
+		node_isolate = isolate;
+	}
+
+	IsolateData *isolate_data;
+	Environment* myEnv;
+
+	{
+		Locker locker(isolate);
+		Isolate::Scope isolate_scope(isolate);
+		HandleScope handle_scope(isolate);
+		isolate_data = CreateIsolateData(isolate, event_loop, v8_platform.Platform(), allocator);
+
+		// TODO(addaleax): This should load a real per-Isolate option, currently
+		// this is still effectively per-process.
+		if (isolate_data->options()->track_heap_objects) {
+			isolate->GetHeapProfiler()->StartTrackingHeapObjects(true);
+		}
+
+		myEnv = node::InternalEmbedSetupEnvironment(isolate, isolate_data, globalObjTemplate, args, exec_args);
+	}
+
+	return myEnv;
+}
+
+#undef READONLY_PROPERTY
+
 inline int Start(uv_loop_t* event_loop,
                  const std::vector<std::string>& args,
                  const std::vector<std::string>& exec_args) {
@@ -2636,6 +2877,40 @@ inline int Start(uv_loop_t* event_loop,
   v8_platform.Platform()->UnregisterIsolate(isolate);
 
   return exit_code;
+}
+
+void EmbedInit(int argc, char** argv, std::vector<std::string>* args, std::vector<std::string>* exec_args)
+{
+	atexit([]() { uv_tty_reset_mode(); });
+	PlatformInit();
+	performance::performance_node_start = PERFORMANCE_NOW();
+
+	CHECK_GT(argc, 0);
+
+	// This needs to run *before* V8::Initialize().
+	Init(args, exec_args);
+
+#if HAVE_OPENSSL
+	{
+		std::string extra_ca_certs;
+		if (SafeGetenv("NODE_EXTRA_CA_CERTS", &extra_ca_certs))
+			crypto::UseExtraCaCerts(extra_ca_certs);
+	}
+#ifdef NODE_FIPS_MODE
+	// In the case of FIPS builds we should make sure
+	// the random source is properly initialized first.
+	OPENSSL_init();
+#endif  // NODE_FIPS_MODE
+	// V8 on Windows doesn't have a good source of entropy. Seed it from
+	// OpenSSL's pool.
+	V8::SetEntropySource(crypto::EntropySource);
+#endif  // HAVE_OPENSSL
+
+	v8_platform.platform_ = (node::NodePlatform *)
+	InitializeV8Platform(per_process_opts->v8_thread_pool_size);
+	V8::Initialize();
+	performance::performance_v8_start = PERFORMANCE_NOW();
+	v8_initialized = true;
 }
 
 int Start(int argc, char** argv) {

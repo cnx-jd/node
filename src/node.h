@@ -199,6 +199,9 @@ typedef intptr_t ssize_t;
 
 namespace node {
 
+// Initialization for Embeddable Node. Should be called first before creating any v8 isolates, globals or node environments.
+NODE_EXTERN void EmbedInit(int argc, char* argv[], std::vector<std::string>* args, std::vector<std::string>* exec_args);
+
 // TODO(addaleax): Officially deprecate this and replace it with something
 // better suited for a public embedder API.
 NODE_EXTERN int Start(int argc, char* argv[]);
@@ -217,6 +220,25 @@ NODE_EXTERN void FreeArrayBufferAllocator(ArrayBufferAllocator* allocator);
 
 class IsolateData;
 class Environment;
+
+// Creating and loading the Environment for embeddable Node
+NODE_EXTERN Environment* EmbedSetupEnvironment(v8::Isolate* isolate, node::ArrayBufferAllocator *allocator, struct uv_loop_s* event_loop,
+	v8::Local<v8::ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args);
+
+// Executes provided JavaScript strings within the current v8 context.
+// This method is likely not necessary, but can be bubbled up to top level and done in test application
+NODE_EXTERN void NodeExecuteString(node::Environment* env, const char* source, const char* scriptName);
+// Kept for testing purposes, remove later.
+NODE_EXTERN void MyNodeExecuteString(node::Environment* env, const char* source, const char* scriptName);
+// Executes provided JavaScript strings within the current v8 context, then runs the event loop. Likely will be removed.
+NODE_EXTERN void NodeExecuteString_WithEventLoop(node::Environment* env, const char* source, const char* scriptName);
+
+// Runs the libuv event loop
+NODE_EXTERN void RunEventLoop(node::Environment* env);
+// Runs the event loop. Kept for testing purposes.
+NODE_EXTERN void MyUvLoopRun(node::Environment* env);
+// Runs the event loop V2. Kept for testing purposes.
+NODE_EXTERN void MyUvLoopRun_V2(node::Environment* env);
 
 class NODE_EXTERN MultiIsolatePlatform : public v8::Platform {
  public:
@@ -277,6 +299,7 @@ NODE_EXTERN MultiIsolatePlatform* GetMainThreadMultiIsolatePlatform();
 NODE_EXTERN MultiIsolatePlatform* CreatePlatform(
     int thread_pool_size,
     node::tracing::TracingController* tracing_controller);
+
 MultiIsolatePlatform* InitializeV8Platform(int thread_pool_size);
 NODE_EXTERN void FreePlatform(MultiIsolatePlatform* platform);
 

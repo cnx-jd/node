@@ -223,22 +223,20 @@ class Environment;
 
 // Creating and loading the Environment for embeddable Node
 NODE_EXTERN Environment* EmbedSetupEnvironment(v8::Isolate* isolate, node::ArrayBufferAllocator *allocator, struct uv_loop_s* event_loop,
-	v8::Local<v8::ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args);
+	v8::MaybeLocal<v8::ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args);
 
 // Executes provided JavaScript strings within the current v8 context.
 // This method is likely not necessary, but can be bubbled up to top level and done in test application
-NODE_EXTERN void NodeExecuteString(node::Environment* env, const char* source, const char* scriptName);
-// Kept for testing purposes, remove later.
-NODE_EXTERN void MyNodeExecuteString(node::Environment* env, const char* source, const char* scriptName);
+NODE_EXTERN v8::MaybeLocal<v8::Value> NodeExecuteString(node::Environment* env, const char* source, const char* scriptName);
+// Kept for testing purposes.
+NODE_EXTERN v8::MaybeLocal<v8::Value> NodeExecuteString_V2(node::Environment* env, const char* source, const char* scriptName);
 // Executes provided JavaScript strings within the current v8 context, then runs the event loop. Likely will be removed.
 NODE_EXTERN void NodeExecuteString_WithEventLoop(node::Environment* env, const char* source, const char* scriptName);
 
 // Runs the libuv event loop
 NODE_EXTERN void RunEventLoop(node::Environment* env);
 // Runs the event loop. Kept for testing purposes.
-NODE_EXTERN void MyUvLoopRun(node::Environment* env);
-// Runs the event loop V2. Kept for testing purposes.
-NODE_EXTERN void MyUvLoopRun_V2(node::Environment* env);
+NODE_EXTERN void RunEventLoop_V2(node::Environment* env);
 
 class NODE_EXTERN MultiIsolatePlatform : public v8::Platform {
  public:

@@ -2487,7 +2487,32 @@ Local<Context> NewContext(Isolate* isolate,
   return context;
 }
 
-void NodeExecuteString(Environment* env, const char* source, const char* scriptName)
+Local<Context> NewContext(Isolate* isolate,
+	MaybeLocal<ObjectTemplate> object_template) {
+	auto context = Context::New(isolate, nullptr, object_template);
+	if (context.IsEmpty()) return context;
+	HandleScope handle_scope(isolate);
+
+	context->SetEmbedderData(
+		ContextEmbedderIndex::kAllowWasmCodeGeneration, True(isolate));
+
+	{
+		// Run lib/internal/per_context.js
+		Context::Scope context_scope(context);
+
+		// TODO(joyeecheung): use NativeModule::Compile
+		Local<String> per_context = NodePerContextSource(isolate);
+		ScriptCompiler::Source per_context_src(per_context, nullptr);
+		Local<Script> s = ScriptCompiler::Compile(
+			context,
+			&per_context_src).ToLocalChecked();
+		s->Run(context).ToLocalChecked();
+	}
+
+	return context;
+}
+
+MaybeLocal<Value> NodeExecuteString(Environment* env, const char* source, const char* scriptName)
 {
 	v8::Isolate *isolate = env->isolate();
 	v8::Locker locker(isolate);
@@ -2499,10 +2524,10 @@ void NodeExecuteString(Environment* env, const char* source, const char* scriptN
 	v8::Local<v8::String> sourceString = v8::String::NewFromUtf8(isolate, source, v8::NewStringType::kNormal).ToLocalChecked();
 	v8::Local<v8::String> scriptNameString = v8::String::NewFromUtf8(isolate, scriptName, v8::NewStringType::kNormal).ToLocalChecked();
 
-	ExecuteString(env, sourceString, scriptNameString);
+	return ExecuteString(env, sourceString, scriptNameString);
 }
 
-void MyNodeExecuteString(Environment* env, const char* source, const char* scriptName)
+MaybeLocal<Value> NodeExecuteString_V2(Environment* env, const char* source, const char* scriptName)
 {
 	v8::Isolate *isolate = env->isolate();
 	//v8::Locker locker(isolate);
@@ -2514,7 +2539,7 @@ void MyNodeExecuteString(Environment* env, const char* source, const char* scrip
 	v8::Local<v8::String> sourceString =v8::String::NewFromUtf8(isolate, source, v8::NewStringType::kNormal).ToLocalChecked();
 	v8::Local<v8::String> scriptNameString = v8::String::NewFromUtf8(isolate, scriptName, v8::NewStringType::kNormal).ToLocalChecked();
 
-	ExecuteString(env, sourceString, scriptNameString);
+	return ExecuteString(env, sourceString, scriptNameString);
 }
 
 void NodeExecuteString_WithEventLoop(Environment* env, const char* source, const char* scriptName)
@@ -2593,42 +2618,7 @@ void RunEventLoop(Environment* env)
 	}
 }
 
-void MyUvLoopRun(Environment* env)
-{
-	v8::Isolate *isolate = env->isolate();
-	v8::Locker locker(isolate);
-
-	v8::HandleScope handle_scope(isolate);
-	v8::Local<v8::Context> context = node::NewContext(isolate);
-	v8::Context::Scope context_scope(context);
-
-	{
-		v8::SealHandleScope seal(isolate);
-		bool more;
-		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_START);
-
-		do {
-			uv_run(env->event_loop(), UV_RUN_DEFAULT);
-
-			node::v8_platform.DrainVMTasks(isolate);
-
-			more = uv_loop_alive(env->event_loop());
-
-			if (more)
-				continue;
-
-			RunBeforeExit(env);
-
-			// Emit `beforeExit` if the loop became alive either after emitting
-			// event, or after running some callbacks.
-			more = uv_loop_alive(env->event_loop());
-		} while (more == true);
-
-		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_EXIT);
-	}
-}
-
-void MyUvLoopRun_V2(Environment* env)
+void RunEventLoop_V2(Environment* env)
 {
 	v8::Isolate *isolate = env->isolate();
 	v8::Locker locker(isolate);
@@ -2767,7 +2757,7 @@ Isolate* NewIsolate(ArrayBufferAllocator* allocator, uv_loop_t* event_loop) {
 }
 
 inline Environment* InternalEmbedSetupEnvironment(Isolate* isolate, IsolateData* isolate_data,
-	Local<ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args)
+	MaybeLocal<ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args)
 {
 	HandleScope handle_scope(isolate);
 	Local<Context> context = NewContext(isolate, globalObjTemplate);
@@ -2797,7 +2787,7 @@ inline Environment* InternalEmbedSetupEnvironment(Isolate* isolate, IsolateData*
 }
 
 Environment* EmbedSetupEnvironment(Isolate* isolate, ArrayBufferAllocator *allocator, uv_loop_t* event_loop, 
-	Local<ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args)
+	MaybeLocal<ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args)
 {
 	if (isolate == nullptr)
 		return NULL;  // Signal internal error.

@@ -226,38 +226,20 @@ NODE_EXTERN Environment* EmbedSetupEnvironment(v8::Isolate* isolate, node::Array
 	v8::MaybeLocal<v8::ObjectTemplate> globalObjTemplate, const std::vector<std::string>& args, const std::vector<std::string>& exec_args);
 
 // Executes provided JavaScript strings within the current v8 context.
-// This method is likely not necessary, but can be bubbled up to top level and done in test application
 NODE_EXTERN std::string EmbedExecuteString(node::Environment* env, const char* source, const char* scriptName);
 // Kept for testing purposes.
 NODE_EXTERN const char* EmbedExecuteString_V2(node::Environment* env, const char* source, const char* scriptName);
-// Kept for testing purposes.
-NODE_EXTERN v8::MaybeLocal<v8::Value> EmbedExecuteString_V3(node::Environment* env, const char* source, const char* scriptName);
+
 // Executes provided JavaScript strings within the current v8 context, then runs the event loop. Likely will be removed.
 NODE_EXTERN void EmbedExecuteString_WithEventLoop(node::Environment* env, const char* source, const char* scriptName);
 
 // Runs the libuv event loop
 NODE_EXTERN void EmbedRunEventLoop(node::Environment* env);
-// Runs the event loop. Kept for testing purposes.
-NODE_EXTERN void EmbedRunEventLoop_V2(node::Environment* env);
-
-// Tearing down embeddable node part 1
-NODE_EXTERN int EmbedTeardown_Part1(node::Environment* env);
-// Kept for testing purposes.
-NODE_EXTERN int EmbedTeardown_Part1_V2(node::Environment* env);
-
-// Tearing down embeddable node part 2
-NODE_EXTERN void EmbedTeardown_Part2(node::Environment* env, node::ArrayBufferAllocator* allocator);
-// Kept for testing purposes.
-NODE_EXTERN void EmbedTeardown_Part2_V2(node::Environment* env, node::ArrayBufferAllocator* allocator);
 
 // Clean up and freeing memory when tearing down embeddable Node
 NODE_EXTERN int EmbedTeardown(node::Environment* env, node::ArrayBufferAllocator* allocator);
 // Kept for testing purposes.
 NODE_EXTERN int EmbedTeardown_V2(node::Environment* env, node::ArrayBufferAllocator* allocator);
-// Kept for testing purposes.
-NODE_EXTERN int EmbedTeardown_V3(node::Environment* env, node::ArrayBufferAllocator* allocator);
-// Kept for testing purposes.
-NODE_EXTERN int EmbedTeardown_V4(node::Environment* env, node::ArrayBufferAllocator* allocator);
 
 class NODE_EXTERN MultiIsolatePlatform : public v8::Platform {
  public:

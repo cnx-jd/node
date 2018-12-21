@@ -2488,7 +2488,7 @@ Local<Context> NewContext(Isolate* isolate,
 }
 
 Local<Context> NewContext(Isolate* isolate,
-	MaybeLocal<ObjectTemplate> object_template) {
+						  MaybeLocal<ObjectTemplate> object_template) {
 	auto context = Context::New(isolate, nullptr, object_template);
 	if (context.IsEmpty()) return context;
 	HandleScope handle_scope(isolate);
@@ -2512,7 +2512,7 @@ Local<Context> NewContext(Isolate* isolate,
 	return context;
 }
 
-MaybeLocal<Value> NodeExecuteString(Environment* env, const char* source, const char* scriptName)
+std::string EmbedExecuteString(Environment* env, const char* source, const char* scriptName)
 {
 	v8::Isolate *isolate = env->isolate();
 	v8::Locker locker(isolate);
@@ -2524,10 +2524,11 @@ MaybeLocal<Value> NodeExecuteString(Environment* env, const char* source, const 
 	v8::Local<v8::String> sourceString = v8::String::NewFromUtf8(isolate, source, v8::NewStringType::kNormal).ToLocalChecked();
 	v8::Local<v8::String> scriptNameString = v8::String::NewFromUtf8(isolate, scriptName, v8::NewStringType::kNormal).ToLocalChecked();
 
-	return ExecuteString(env, sourceString, scriptNameString);
+	auto result = ExecuteString(env, sourceString, scriptNameString).ToLocalChecked();
+	return std::string(*v8::String::Utf8Value(isolate, result));
 }
 
-MaybeLocal<Value> NodeExecuteString_V2(Environment* env, const char* source, const char* scriptName)
+const char* EmbedExecuteString_V2(Environment* env, const char* source, const char* scriptName)
 {
 	v8::Isolate *isolate = env->isolate();
 	//v8::Locker locker(isolate);
@@ -2539,10 +2540,28 @@ MaybeLocal<Value> NodeExecuteString_V2(Environment* env, const char* source, con
 	v8::Local<v8::String> sourceString =v8::String::NewFromUtf8(isolate, source, v8::NewStringType::kNormal).ToLocalChecked();
 	v8::Local<v8::String> scriptNameString = v8::String::NewFromUtf8(isolate, scriptName, v8::NewStringType::kNormal).ToLocalChecked();
 
-	return ExecuteString(env, sourceString, scriptNameString);
+	auto result = ExecuteString(env, sourceString, scriptNameString).ToLocalChecked();
+	return *v8::String::Utf8Value(isolate, result);
 }
 
-void NodeExecuteString_WithEventLoop(Environment* env, const char* source, const char* scriptName)
+v8::MaybeLocal<v8::Value> EmbedExecuteString_V3(Environment* env, const char* source, const char* scriptName)
+{
+	v8::Isolate *isolate = env->isolate();
+	v8::Locker locker(isolate);
+
+	//v8::HandleScope handle_scope(isolate);
+	v8::EscapableHandleScope scope(isolate);
+	v8::Local<v8::Context> context = node::NewContext(isolate);
+	v8::Context::Scope context_scope(context);
+
+	v8::Local<v8::String> sourceString = v8::String::NewFromUtf8(isolate, source, v8::NewStringType::kNormal).ToLocalChecked();
+	v8::Local<v8::String> scriptNameString = v8::String::NewFromUtf8(isolate, scriptName, v8::NewStringType::kNormal).ToLocalChecked();
+
+	auto result = ExecuteString(env, sourceString, scriptNameString).ToLocalChecked();
+	return scope.Escape(result);
+}
+
+void EmbedExecuteString_WithEventLoop(Environment* env, const char* source, const char* scriptName)
 {
 	v8::Isolate *isolate = env->isolate();
 	v8::Locker locker(isolate);
@@ -2563,7 +2582,7 @@ void NodeExecuteString_WithEventLoop(Environment* env, const char* source, const
 		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_START);
 
 		do {
-			uv_run(env->event_loop(), UV_RUN_DEFAULT);
+			uv_run(env->event_loop(), UV_RUN_ONCE);
 
 			node::v8_platform.DrainVMTasks(isolate);
 
@@ -2583,7 +2602,7 @@ void NodeExecuteString_WithEventLoop(Environment* env, const char* source, const
 	}
 }
 
-void RunEventLoop(Environment* env)
+void EmbedRunEventLoop(Environment* env)
 {
 	v8::Isolate *isolate = env->isolate();
 	v8::Locker locker(isolate);
@@ -2618,7 +2637,7 @@ void RunEventLoop(Environment* env)
 	}
 }
 
-void RunEventLoop_V2(Environment* env)
+void EmbedRunEventLoop_V2(Environment* env)
 {
 	v8::Isolate *isolate = env->isolate();
 	v8::Locker locker(isolate);
@@ -2652,6 +2671,360 @@ void RunEventLoop_V2(Environment* env)
 
 		env->performance_state()->Mark(node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_EXIT);
 	}
+}
+
+int EmbedTeardown_Part1(Environment* env)
+{
+	int exit_code;
+	Isolate* isolate = env->isolate();
+
+	{
+		Locker locker(isolate);
+		// ====== Teardown Environment ====== Start
+		env->set_trace_sync_io(false);
+
+		exit_code = EmitExit(env);
+
+		WaitForInspectorDisconnect(env);
+
+		env->set_can_call_into_js(false);
+		env->stop_sub_worker_contexts();
+		uv_tty_reset_mode();
+		env->RunCleanup();
+		RunAtExit(env);
+		// ====== Teardown Environment ====== End
+
+		v8_platform.DrainVMTasks(isolate);
+		v8_platform.CancelVMTasks(isolate);
+#if defined(LEAK_SANITIZER)
+		__lsan_do_leak_check();
+#endif
+	}
+
+	{
+		Mutex::ScopedLock scoped_lock(node_isolate_mutex);
+		CHECK_EQ(node_isolate, isolate);
+		node_isolate = nullptr;
+	}
+
+	return exit_code;
+}
+
+int EmbedTeardown_Part1_V2(Environment* env)
+{
+	int exit_code;
+	Isolate* isolate = env->isolate();
+	RunBeforeExit(env);
+
+	{
+		Locker locker(isolate);
+		// ====== Teardown Environment ====== Start
+		env->set_trace_sync_io(false);
+
+		exit_code = EmitExit(env);
+
+		WaitForInspectorDisconnect(env);
+
+		env->set_can_call_into_js(false);
+		env->stop_sub_worker_contexts();
+		uv_tty_reset_mode();
+		env->RunCleanup();
+		RunAtExit(env);
+		// ====== Teardown Environment ====== End
+
+		v8_platform.DrainVMTasks(isolate);
+		v8_platform.CancelVMTasks(isolate);
+#if defined(LEAK_SANITIZER)
+		__lsan_do_leak_check();
+#endif
+	}
+
+	{
+		Mutex::ScopedLock scoped_lock(node_isolate_mutex);
+		CHECK_EQ(node_isolate, isolate);
+		node_isolate = nullptr;
+	}
+
+	return exit_code;
+}
+
+void EmbedTeardown_Part2(Environment* env, ArrayBufferAllocator* allocator)
+{
+	//isolate->Dispose();
+	v8_platform.Platform()->UnregisterIsolate(env->isolate());
+	FreeIsolateData(env->isolate_data());
+	FreeArrayBufferAllocator(allocator);
+	//delete env;
+
+	// ====== Clean up Node V8 ====== Start
+	v8_platform.StopTracingAgent();
+	v8_initialized = false;
+	V8::Dispose();
+	//V8::ShutdownPlatform();
+		
+	// uv_run cannot be called from the time before the beforeExit callback
+	// runs until the program exits unless the event loop has any referenced
+	// handles after beforeExit terminates. This prevents unrefed timers
+	// that happen to terminate during shutdown from being run unsafely.
+	// Since uv_run cannot be called, uv_async handles held by the platform
+	// will never be fully cleaned up.
+	v8_platform.Dispose();
+	// ====== Clean up Node V8 ====== End
+}
+
+void EmbedTeardown_Part2_V2(Environment* env, ArrayBufferAllocator* allocator)
+{
+	//isolate->Dispose();
+	v8_platform.Platform()->UnregisterIsolate(env->isolate());
+	FreeIsolateData(env->isolate_data());
+	FreeArrayBufferAllocator(allocator);
+
+	// ====== Clean up Node V8 ====== Start
+	v8_platform.StopTracingAgent();
+	v8_initialized = false;
+	V8::Dispose();
+	V8::ShutdownPlatform();
+
+	// uv_run cannot be called from the time before the beforeExit callback
+	// runs until the program exits unless the event loop has any referenced
+	// handles after beforeExit terminates. This prevents unrefed timers
+	// that happen to terminate during shutdown from being run unsafely.
+	// Since uv_run cannot be called, uv_async handles held by the platform
+	// will never be fully cleaned up.
+	v8_platform.Dispose();
+	// ====== Clean up Node V8 ====== End
+}
+
+
+int EmbedTeardown(Environment* env, ArrayBufferAllocator* allocator)
+{
+	int exit_code;
+
+	Isolate* isolate = env->isolate();
+	IsolateData* isolateData = env->isolate_data();
+
+	//RunBeforeExit(env);
+
+	{
+		Locker locker(isolate);
+		// ====== Teardown Environment ====== Start
+		env->set_trace_sync_io(false);
+
+		exit_code = EmitExit(env);
+
+		WaitForInspectorDisconnect(env);
+
+		env->set_can_call_into_js(false);
+		env->stop_sub_worker_contexts();
+		uv_tty_reset_mode();
+		env->RunCleanup();
+		RunAtExit(env);
+		//delete env;
+		// ====== Teardown Environment ====== End
+
+		v8_platform.DrainVMTasks(isolate);
+		v8_platform.CancelVMTasks(isolate);
+#if defined(LEAK_SANITIZER)
+		__lsan_do_leak_check();
+#endif
+	}
+
+	{
+		Mutex::ScopedLock scoped_lock(node_isolate_mutex);
+		CHECK_EQ(node_isolate, isolate);
+		node_isolate = nullptr;
+	}
+
+	isolate->Exit();
+	isolate->Dispose();
+	v8_platform.Platform()->UnregisterIsolate(isolate);
+	FreeIsolateData(isolateData);
+	FreeArrayBufferAllocator(allocator);
+
+	// ====== Clean up Node V8 ====== Start
+	v8_platform.StopTracingAgent();
+	v8_initialized = false;
+	V8::Dispose();
+	//V8::ShutdownPlatform();
+
+	// uv_run cannot be called from the time before the beforeExit callback
+	// runs until the program exits unless the event loop has any referenced
+	// handles after beforeExit terminates. This prevents unrefed timers
+	// that happen to terminate during shutdown from being run unsafely.
+	// Since uv_run cannot be called, uv_async handles held by the platform
+	// will never be fully cleaned up.
+	v8_platform.Dispose();
+	// ====== Clean up Node V8 ====== End
+
+	return exit_code;
+}
+
+int EmbedTeardown_V2(Environment* env, ArrayBufferAllocator* allocator)
+{
+	int exit_code;
+
+	Isolate* isolate = env->isolate();
+	IsolateData* isolateData = env->isolate_data();
+
+	RunBeforeExit(env);
+	
+	{
+		Locker locker(isolate);
+		// ====== Teardown Environment ====== Start
+		env->set_trace_sync_io(false);
+
+		exit_code = EmitExit(env);
+
+		WaitForInspectorDisconnect(env);
+
+		env->set_can_call_into_js(false);
+		env->stop_sub_worker_contexts();
+		uv_tty_reset_mode();
+		env->RunCleanup();
+		RunAtExit(env);
+		// ====== Teardown Environment ====== End
+
+		v8_platform.DrainVMTasks(isolate);
+		v8_platform.CancelVMTasks(isolate);
+#if defined(LEAK_SANITIZER)
+		__lsan_do_leak_check();
+#endif
+	}
+
+	{
+		Mutex::ScopedLock scoped_lock(node_isolate_mutex);
+		CHECK_EQ(node_isolate, isolate);
+		node_isolate = nullptr;
+	}
+
+	isolate->Exit();
+	isolate->Dispose();
+	v8_platform.Platform()->UnregisterIsolate(isolate);
+	FreeIsolateData(isolateData);
+	FreeArrayBufferAllocator(allocator);
+
+	// ====== Clean up Node V8 ====== Start
+	v8_platform.StopTracingAgent();
+	v8_initialized = false;
+	V8::Dispose();
+
+	// uv_run cannot be called from the time before the beforeExit callback
+	// runs until the program exits unless the event loop has any referenced
+	// handles after beforeExit terminates. This prevents unrefed timers
+	// that happen to terminate during shutdown from being run unsafely.
+	// Since uv_run cannot be called, uv_async handles held by the platform
+	// will never be fully cleaned up.
+	v8_platform.Dispose();
+	// ====== Clean up Node V8 ====== End
+
+	return exit_code;
+}
+
+int EmbedTeardown_V3(Environment* env, ArrayBufferAllocator* allocator)
+{
+	int exit_code;
+
+	Isolate* isolate = env->isolate();
+	IsolateData* isolateData = env->isolate_data();
+
+	{
+		Locker locker(isolate);
+		// ====== Teardown Environment ====== Start
+		env->set_trace_sync_io(false);
+
+		exit_code = EmitExit(env);
+
+		WaitForInspectorDisconnect(env);
+
+		env->set_can_call_into_js(false);
+		env->stop_sub_worker_contexts();
+		uv_tty_reset_mode();
+		env->RunCleanup();
+		RunAtExit(env);
+		// ====== Teardown Environment ====== End
+
+		v8_platform.DrainVMTasks(isolate);
+		v8_platform.CancelVMTasks(isolate);
+#if defined(LEAK_SANITIZER)
+		__lsan_do_leak_check();
+#endif
+	}
+
+	{
+		Mutex::ScopedLock scoped_lock(node_isolate_mutex);
+		CHECK_EQ(node_isolate, isolate);
+		node_isolate = nullptr;
+	}
+
+	isolate->Exit();
+	isolate->Dispose();
+	v8_platform.Platform()->UnregisterIsolate(isolate);
+	FreeIsolateData(isolateData);
+	FreeArrayBufferAllocator(allocator);
+
+	// ====== Clean up Node V8 ====== Start
+	v8_platform.StopTracingAgent();
+	v8_initialized = false;
+	V8::Dispose();
+
+	//v8_platform.Dispose();
+	// ====== Clean up Node V8 ====== End
+
+	return exit_code;
+}
+
+int EmbedTeardown_V4(Environment* env, ArrayBufferAllocator* allocator)
+{
+	int exit_code;
+
+	Isolate* isolate = env->isolate();
+	IsolateData* isolateData = env->isolate_data();
+
+	{
+		Locker locker(isolate);
+		// ====== Teardown Environment ====== Start
+		env->set_trace_sync_io(false);
+
+		exit_code = EmitExit(env);
+
+		WaitForInspectorDisconnect(env);
+
+		env->set_can_call_into_js(false);
+		env->stop_sub_worker_contexts();
+		uv_tty_reset_mode();
+		env->RunCleanup();
+		RunAtExit(env);
+		// ====== Teardown Environment ====== End
+
+		v8_platform.DrainVMTasks(isolate);
+		v8_platform.CancelVMTasks(isolate);
+#if defined(LEAK_SANITIZER)
+		__lsan_do_leak_check();
+#endif
+	}
+
+	{
+		Mutex::ScopedLock scoped_lock(node_isolate_mutex);
+		CHECK_EQ(node_isolate, isolate);
+		node_isolate = nullptr;
+	}
+
+	isolate->Exit();
+	isolate->Dispose();
+	v8_platform.Platform()->UnregisterIsolate(isolate);
+	FreeIsolateData(isolateData);
+	FreeArrayBufferAllocator(allocator);
+
+	// ====== Clean up Node V8 ====== Start
+	v8_platform.StopTracingAgent();
+	v8_initialized = false;
+	V8::Dispose();
+	V8::ShutdownPlatform();
+
+	v8_platform.Dispose();
+	// ====== Clean up Node V8 ====== End
+
+	return exit_code;
 }
 
 inline int Start(Isolate* isolate, IsolateData* isolate_data,
@@ -2896,8 +3269,8 @@ void EmbedInit(int argc, char** argv, std::vector<std::string>* args, std::vecto
 	V8::SetEntropySource(crypto::EntropySource);
 #endif  // HAVE_OPENSSL
 
-	v8_platform.platform_ = (node::NodePlatform *)
-	InitializeV8Platform(per_process_opts->v8_thread_pool_size);
+	v8_platform.platform_ = (node::NodePlatform *) InitializeV8Platform(per_process_opts->v8_thread_pool_size);
+	
 	V8::Initialize();
 	performance::performance_v8_start = PERFORMANCE_NOW();
 	v8_initialized = true;
